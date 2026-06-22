@@ -1,0 +1,29 @@
+{
+  "name": "exammind-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "react": "^19",
+    "react-dom": "^19",
+    "next": "16",
+    "better-auth": "^1.0.0",
+    "drizzle-orm": "^0.45.0",
+    "pg": "^8.12.0",
+    "lucide-react": "^0.407.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/pg": "^8",
+    "tailwindcss": "^4.0.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0"
+  }
+}

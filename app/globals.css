@@ -1,0 +1,75 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@400;600;700&family=Inter:wght@400;500;600;700;900&display=swap');
+
+@theme inline {
+  --font-sans: 'Inter', sans-serif;
+  --font-serif: 'Times New Roman', serif;
+  --font-devanagari: 'Noto Serif Devanagari', serif;
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.6%;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  @apply bg-background;
+}
+
+body {
+  @apply font-sans text-foreground;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden border-0 whitespace-nowrap;
+  }
+
+  .no-print {
+    @apply print:hidden;
+  }
+
+  .screen-only {
+    @apply hidden;
+  }
+
+  @media screen {
+    .screen-only {
+      @apply block;
+    }
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}
+
+@media print {
+  body,
+  html {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  header,
+  nav,
+  aside,
+  button,
+  .no-print {
+    display: none !important;
+  }
+
+  .question-block {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
