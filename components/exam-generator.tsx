@@ -32,7 +32,6 @@ import {
   ChevronDown,
   MessageSquare,
   BrainCircuit,
-  FileWord,
 } from 'lucide-react'
 import { savePaper, deletePaper, submitTestAttempt } from '@/app/actions/papers'
 import { Header } from './header'
