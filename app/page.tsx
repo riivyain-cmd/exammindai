@@ -1,26 +1,15 @@
-import { redirect } from 'next/navigation'
-import { auth } from '@/lib/auth'
-import { headers } from 'next/headers'
 import { ExamGenerator } from '@/components/exam-generator'
-import { Header } from '@/components/header'
 
 export const metadata = {
   title: 'ExamMind AI - Mock Test Generator',
   description: 'Generate AI-powered exam papers with bilingual support',
 }
 
-export default async function Page() {
-  const session = await auth.api.getSession({ headers: await headers() })
-
-  if (!session?.user) {
-    redirect('/sign-in')
-  }
-
+export default function Page() {
   const geminiApiKey = process.env.GEMINI_API_KEY || ''
 
   return (
-    <div>
-      <Header userEmail={session.user.email || 'User'} />
+    <div className="min-h-screen bg-slate-50">
       <ExamGenerator geminiApiKey={geminiApiKey} />
     </div>
   )

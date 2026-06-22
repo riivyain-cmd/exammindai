@@ -35,6 +35,7 @@ import {
   FileWord,
 } from 'lucide-react'
 import { savePaper, deletePaper, submitTestAttempt } from '@/app/actions/papers'
+import { Header } from './header'
 
 interface ExamGeneratorProps {
   geminiApiKey: string
@@ -617,6 +618,7 @@ Source Text: ${inputText.substring(0, 60000)}`
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col overflow-x-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <Header />
       {/* Status Message */}
       {statusMessage && (
         <div className="fixed bottom-4 right-4 flex items-center gap-2 bg-slate-900 border border-slate-700 text-white p-3 rounded-lg shadow-xl animate-bounce z-50">
