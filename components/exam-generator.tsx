@@ -36,6 +36,10 @@ import {
 } from 'lucide-react'
 import { savePaper, deletePaper, submitTestAttempt } from '@/app/actions/papers'
 
+interface ExamGeneratorProps {
+  geminiApiKey: string
+}
+
 const EXAM_TYPES = ['UPSC', 'SSC CGL', 'State PCS (RPSC)', 'Banking PO', 'Railway RRB', 'CTET', 'NEET', 'JEE']
 const PERSPECTIVES = [
   'Analytical',
@@ -177,7 +181,7 @@ function PaperTimer() {
   )
 }
 
-export function ExamGenerator({ geminiApiKey }: { geminiApiKey: string }) {
+export function ExamGenerator({ geminiApiKey }: ExamGeneratorProps) {
   const [inputText, setInputText] = useState('')
   const [inputTitle, setInputTitle] = useState('Mock_Test_Paper')
   const [activeTab, setActiveTab] = useState<'setup' | 'preview' | 'library'>('setup')
