@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { headers } from 'next/headers'
 import { ExamGenerator } from '@/components/exam-generator'
+import { Header } from '@/components/header'
 
 export const metadata = {
   title: 'ExamMind AI - Mock Test Generator',
@@ -19,6 +20,7 @@ export default async function Page() {
 
   return (
     <div>
+      <Header userEmail={session.user.email || 'User'} />
       <ExamGenerator geminiApiKey={geminiApiKey} />
     </div>
   )
