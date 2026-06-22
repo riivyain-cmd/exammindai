@@ -1,0 +1,1970 @@
+```react
+import { useState, useEffect, useRef } from "react";
+import { initializeApp } from "firebase/app";
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, deleteDoc } from "firebase/firestore";
+import {
+  Upload, CheckCircle, Sparkles, Copy, FileText, Layers,
+  Loader2, FileCheck, ClipboardCheck, ZoomIn, ZoomOut, RotateCcw,
+  AlertCircle, Settings2, Download, Trash2, Target,
+  Share2, CloudUpload, Library, Search, Eye, EyeOff, Maximize, X, Printer,
+  BrainCircuit, Clock, Play, Pause, Check, FileWord, ChevronDown, RefreshCw, MessageSquare
+} from "lucide-react";
+
+// ─────────────────────────────────────────────
+// Firebase Initialization (Strictly Crash-Proof)
+// ─────────────────────────────────────────────
+let firebaseConfig = {};
+try {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    firebaseConfig = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
+  }
+} catch (e) {
+  console.warn("Firebase config is empty or invalid, using defaults.");
+}
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' && __app_id ? __app_id : 'default-app-id';
+
+// ─────────────────────────────────────────────
+// Constants & UI Helpers
+// ─────────────────────────────────────────────
+const EXAM_TYPES = ["UPSC", "SSC CGL", "State PCS (RPSC)", "Banking PO", "Railway RRB", "CTET", "NEET", "JEE"];
+const PERSPECTIVES = [
+  "Analytical", "Factual", "Conceptual", "PYQ Pattern", "Assertion-Reason",
+  "Statement Based (1, 2, Both)", "Match the Following", "Applied / Clinical", "Custom Mix (Percentage)"
+];
+
+function Badge({ level }) {
+  const map = {
+    Easy: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    Moderate: "bg-amber-100 text-amber-700 border-amber-200",
+    Hard: "bg-rose-100 text-rose-700 border-rose-200",
+  };
+  return (
+    <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${map[level] || map.Easy}`} data-html2canvas-ignore="true">
+      {level}
+    </span>
+  );
+}
+
+function SliderRow({ label, value, color, onChange }) {
+  const colors = { 
+    easy: "accent-emerald-500", moderate: "accent-amber-500", hard: "accent-rose-500",
+    factual: "accent-blue-500", conceptual: "accent-purple-500", advanced: "accent-orange-500"
+  };
+  const textColors = { 
+    easy: "text-emerald-600", moderate: "text-amber-600", hard: "text-rose-600",
+    factual: "text-blue-600", conceptual: "text-purple-600", advanced: "text-orange-600"
+  };
+  return (
+    <div>
+      <div className="flex justify-between text-xs font-semibold text-slate-600 mb-1.5">
+        <span>{label}</span>
+        <span className={`font-bold tabular-nums ${textColors[color]}`}>{value}%</span>
+      </div>
+      <input type="range" min="0" max="100" value={value}
+        onChange={e => onChange(parseInt(e.target.value))}
+        className={`w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-200 ${colors[color]}`} />
+    </div>
+  );
+}
+
+function PaperTimer({ isFullscreen }) {
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+  useEffect(() => {
+    let interval;
+    if (isTimerRunning) {
+      interval = setInterval(() => {
+        setTimerSeconds(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerRunning]);
+
+  const formatTime = (totalSeconds) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setTimerSeconds(0);
+  };
+
+  return (
+    <div className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-lg border ${isFullscreen ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-700'}`}>
+      <Clock size={15} className={isTimerRunning ? "text-indigo-500 animate-pulse" : (isFullscreen ? "text-slate-400" : "text-slate-500")} />
+      <span className="text-[11px] sm:text-xs font-bold font-mono min-w-[35px] sm:min-w-[40px] text-center tracking-wider">{formatTime(timerSeconds)}</span>
+      <div className={`w-px h-3 sm:h-4 mx-0.5 sm:mx-1 ${isFullscreen ? 'bg-slate-600' : 'bg-slate-300'}`}></div>
+      <button onClick={() => setIsTimerRunning(!isTimerRunning)} className={`transition-colors p-0.5 ${isTimerRunning ? 'text-amber-500 hover:text-amber-600' : 'text-emerald-500 hover:text-emerald-600'}`} title={isTimerRunning ? "Pause Timer" : "Start Timer"}>
+        {isTimerRunning ? <Pause size={14} /> : <Play size={14} />}
+      </button>
+      <button onClick={resetTimer} className={`transition-colors p-0.5 ${isFullscreen ? 'text-slate-400 hover:text-rose-400' : 'text-slate-400 hover:text-rose-500'}`} title="Reset Timer">
+        <RotateCcw size={14} />
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Main Application
+// ─────────────────────────────────────────────
+export default function App() {
+  const [user, setUser] = useState(null);
+  
+  const [inputText, setInputText]   = useState("");
+  const [inputTitle, setInputTitle] = useState("Mock_Test_Paper");
+  const [activeTab, setActiveTab]   = useState("setup"); 
+
+  const [pdfProgress, setPdfProgress]     = useState(null);
+  const [isPdfUploaded, setIsPdfUploaded] = useState(false);
+  const [isExportBusy, setIsExportBusy]   = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const [paperLanguage, setPaperLanguage] = useState("Bilingual"); // 🔥 NEW: Language Mode
+  const [distEasy, setDistEasy]         = useState(30);
+  const [distModerate, setDistModerate] = useState(40);
+  const [distHard, setDistHard]         = useState(30);
+  const [examType, setExamType]           = useState("State PCS (RPSC)");
+  const [perspectiveMode, setPerspectiveMode] = useState("Custom Mix (Percentage)");
+  const [targetCount, setTargetCount]     = useState(15);
+  const [topicFocus, setTopicFocus]       = useState("");
+
+  const [distFactual, setDistFactual]       = useState(40);
+  const [distConceptual, setDistConceptual] = useState(40);
+  const [distAdvanced, setDistAdvanced]     = useState(20);
+
+  // Exam Details Metadata
+  const [examSubject, setExamSubject] = useState("G.K. and G.S.");
+  const [maxMarks, setMaxMarks]       = useState("200");
+  const [paperCode, setPaperCode]     = useState("50");
+
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [questions, setQuestions]       = useState([]);
+  const [zoomLevel, setZoomLevel]       = useState(1);
+  const [dragOver, setDragOver]         = useState(false);
+  const [isPracticeMode, setIsPracticeMode] = useState(true);
+  const [isFullscreen, setIsFullscreen]   = useState(false); 
+  const [revealedQs, setRevealedQs]       = useState({}); 
+
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [studentAnswers, setStudentAnswers] = useState({});
+  const [isTestSubmitted, setIsTestSubmitted] = useState(false);
+  const [paperToDelete, setPaperToDelete] = useState(null);
+
+  const [isSuggestingTopics, setIsSuggestingTopics] = useState(false);
+  const [isSummarizing, setIsSummarizing]           = useState(false);
+  const [aiSummary, setAiSummary]                   = useState("");
+
+  const [isGeneratingMnemonics, setIsGeneratingMnemonics] = useState(false);
+  const [aiMnemonics, setAiMnemonics] = useState("");
+
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
+  const [aiFlashcards, setAiFlashcards] = useState("");
+
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [aiStudyPlan, setAiStudyPlan] = useState("");
+
+  const [isExtractingFacts, setIsExtractingFacts] = useState(false);
+  const [aiKeyFacts, setAiKeyFacts] = useState("");
+
+  const [chatQuestion, setChatQuestion] = useState("");
+  const [isAskingAI, setIsAskingAI] = useState(false);
+  const [chatAnswer, setChatAnswer] = useState("");
+
+  // Cloud Variables (Manual Save Control)
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedCode, setSavedCode] = useState(null);
+  const [paperAuthorId, setPaperAuthorId] = useState(null);
+  const [mySavedPapers, setMySavedPapers] = useState([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  const [searchCode, setSearchCode] = useState("");
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
+  
+  const sourceTextRef = useRef(null);
+  const pdfRef = useRef(null);
+
+  // Auto-Zoom for Mobile
+  useEffect(() => {
+    const w = window.innerWidth;
+    if (w < 400) setZoomLevel(0.40);
+    else if (w < 500) setZoomLevel(0.48);
+    else if (w < 640) setZoomLevel(0.60);
+    else if (w < 800) setZoomLevel(0.80);
+    else setZoomLevel(1);
+  }, []);
+
+  const generateShortCode = () => {
+    return "BDR-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
+
+  const handleShare = () => {
+    if (savedCode) {
+      navigator.clipboard.writeText(savedCode);
+      notify("✅ Code copy ho gaya!");
+    }
+  };
+
+  // Init Fonts & PDF.js
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.href = "https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari:wght@400;600;700&family=Times+New+Roman&family=Inter:wght@400;500;600;700;900&display=swap";
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+
+    if (!window.pdfjsLib) {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      s.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      };
+      document.head.appendChild(s);
+    }
+
+    if (!window.html2pdf) {
+      const s2 = document.createElement("script");
+      s2.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+      document.head.appendChild(s2);
+    }
+  }, []);
+
+  // Init Firebase Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e) {
+        console.error("Auth error:", e);
+      }
+    };
+    initAuth();
+    const unsub = onAuthStateChanged(auth, setUser);
+    return () => unsub();
+  }, []);
+
+  // Handle Fullscreen Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isFullscreen) setIsFullscreen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
+  // Restore Session Only Once
+  useEffect(() => {
+    if (!user || hasLoadedInitial) return;
+
+    const restorePastSession = async () => {
+      setIsLoadingLibrary(true);
+      try {
+        const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'papers'));
+        const allPapers = querySnapshot.docs.map(d => d.data());
+        const myPapers = allPapers.filter(p => p.authorId === user.uid).sort((a,b) => b.createdAt - a.createdAt);
+        
+        setMySavedPapers(myPapers);
+
+        if (myPapers.length > 0) {
+           const latest = myPapers[0];
+           setInputTitle(latest.title || "Mock_Test_Paper");
+           setExamType(latest.examType || "State PCS (RPSC)");
+           setPerspectiveMode(latest.perspectiveMode || "Analytical");
+           setPaperLanguage(latest.paperLanguage || "Bilingual"); // Restore Language
+           setQuestions(latest.questions || []);
+           setSavedCode(latest.code);
+           setPaperAuthorId(latest.authorId);
+           setExamSubject(latest.examSubject || "G.K. and G.S.");
+           setMaxMarks(latest.maxMarks || "200");
+           setPaperCode(latest.paperCode || "50");
+           
+           setStudentAnswers({});
+           setIsTestSubmitted(false);
+           setActiveTab("preview"); 
+           
+           notify("✨ Welcome Back! Aapka pichla paper load ho gaya hai.");
+        }
+      } catch (e) {
+        console.error("Restore failed:", e);
+      } finally {
+        setIsLoadingLibrary(false);
+        setHasLoadedInitial(true); 
+      }
+    };
+
+    restorePastSession();
+  }, [user, hasLoadedInitial]);
+
+  // 🔥 MANUAL SAVE LOGIC (ONLY TRIGGERED ON CLICK)
+  const handleManualSave = async () => {
+    if (!user) {
+        notify("❌ Saving ke liye authentication zaroori hai.");
+        return;
+    }
+    
+    // Agar existing paper kisi aur ka hai toh save as new
+    const codeToUse = (savedCode && paperAuthorId === user.uid) ? savedCode : generateShortCode();
+
+    setIsSaving(true);
+    try {
+      const paperData = JSON.parse(JSON.stringify({
+        code: codeToUse,
+        title: inputTitle || "Mock_Test",
+        examType: examType || "State PCS (RPSC)",
+        perspectiveMode: perspectiveMode || "Analytical",
+        paperLanguage: paperLanguage || "Bilingual",
+        examSubject: examSubject || "G.K. and G.S.",
+        maxMarks: maxMarks || "200",
+        paperCode: paperCode || "50",
+        questions: questions || [],
+        createdAt: Date.now(),
+        authorId: user.uid
+      }));
+      
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'papers', codeToUse);
+      
+      // Upsert the document
+      await setDoc(docRef, paperData, { merge: true });
+      
+      if (!savedCode || savedCode !== codeToUse) {
+          setSavedCode(codeToUse);
+          setPaperAuthorId(user.uid);
+          setMySavedPapers(prev => [paperData, ...prev.filter(p => p.code !== codeToUse)]);
+          notify(`✅ Paper naye code (${codeToUse}) ke sath cloud me save ho gaya!`);
+      } else {
+          setMySavedPapers(prev => prev.map(p => p.code === codeToUse ? paperData : p));
+          notify(`✅ Paper cloud me successfully update ho gaya!`);
+      }
+    } catch (e) {
+      console.error("Manual save failed:", e);
+      notify("❌ Cloud Save Failed. Internet connection check karein.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const notify = (msg) => {
+    setStatusMessage(msg);
+    setTimeout(() => setStatusMessage(""), 4500);
+  };
+
+  const adjustSliders = (type, val) => {
+    const rem = 100 - val;
+    if (type === "easy") {
+      const sum = distModerate + distHard;
+      const m = sum > 0 ? Math.round((distModerate / sum) * rem) : Math.round(rem / 2);
+      setDistEasy(val); setDistModerate(m); setDistHard(rem - m);
+    } else if (type === "moderate") {
+      const sum = distEasy + distHard;
+      const e = sum > 0 ? Math.round((distEasy / sum) * rem) : Math.round(rem / 2);
+      setDistModerate(val); setDistEasy(e); setDistHard(rem - e);
+    } else {
+      const sum = distEasy + distModerate;
+      const e = sum > 0 ? Math.round((distEasy / sum) * rem) : Math.round(rem / 2);
+      setDistHard(val); setDistEasy(e); setDistModerate(rem - e);
+    }
+  };
+
+  const adjustStyleSliders = (type, val) => {
+    const rem = 100 - val;
+    if (type === "factual") {
+      const sum = distConceptual + distAdvanced;
+      const c = sum > 0 ? Math.round((distConceptual / sum) * rem) : Math.round(rem / 2);
+      setDistFactual(val); setDistConceptual(c); setDistAdvanced(rem - c);
+    } else if (type === "conceptual") {
+      const sum = distFactual + distAdvanced;
+      const f = sum > 0 ? Math.round((distFactual / sum) * rem) : Math.round(rem / 2);
+      setDistConceptual(val); setDistFactual(f); setDistAdvanced(rem - f);
+    } else {
+      const sum = distFactual + distConceptual;
+      const f = sum > 0 ? Math.round((distFactual / sum) * rem) : Math.round(rem / 2);
+      setDistAdvanced(val); setDistFactual(f); setDistConceptual(rem - f);
+    }
+  };
+
+  const processFile = async (file) => {
+    if (!file) return;
+    const newTitle = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_ -]/g, "");
+    setInputTitle(newTitle || "Mock_Test");
+    setIsPdfUploaded(false);
+
+    if (questions.length > 0) {
+      setQuestions([]);
+      setSavedCode(null);
+      setPaperAuthorId(null);
+      setRevealedQs({});
+      setStudentAnswers({});
+      setIsTestSubmitted(false);
+    }
+
+    if (file.type === "application/pdf") {
+      if (!window.pdfjsLib) { notify("PDF engine load ho raha hai…"); return; }
+      notify("PDF open ho rahi hai…");
+      setPdfProgress({ current: 0, total: 100 });
+      const reader = new FileReader();
+      reader.onload = async function () {
+        try {
+          const pdf   = await window.pdfjsLib.getDocument({ data: new Uint8Array(this.result) }).promise;
+          const total = pdf.numPages;
+          setPdfProgress({ current: 0, total });
+          let text = "";
+          for (let i = 1; i <= total; i++) {
+            setPdfProgress({ current: i, total });
+            const page    = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            text += `[PAGE ${i}]\n` + content.items.map(x => x.str).join(" ") + "\n\n";
+          }
+          setInputText(text);
+          setIsPdfUploaded(true);
+          notify(`Done! ${total} pages extract ho gaye.`);
+          setPdfProgress(null);
+        } catch {
+          notify("❌ PDF read nahi ho saki. Doosri file try karein.");
+          setPdfProgress(null);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = e => {
+        setInputText(e.target.result);
+        setIsPdfUploaded(true);
+        notify(`File load ho gayi: ${file.name}`);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleFileInput = e => processFile(e.target.files[0]);
+  const handleDrop = e => { e.preventDefault(); setDragOver(false); processFile(e.dataTransfer.files[0]); };
+
+  const generate = async () => {
+    if (!inputText.trim() || isGenerating) return;
+    setIsGenerating(true);
+    notify(`${targetCount} questions generate ho rahe hain...`);
+    setActiveTab("preview");
+
+    const easyN = Math.round((targetCount * distEasy) / 100);
+    const modN  = Math.round((targetCount * distModerate) / 100);
+    const hardN = targetCount - easyN - modN;
+    const existing  = questions.map(q => q.q_en.substring(0, 30)).join(" | ");
+    const safeText  = inputText.substring(0, 60000);
+
+    let stylePrompt = `Question Style/Pattern: ${perspectiveMode}`;
+    if (perspectiveMode === "Custom Mix (Percentage)") {
+        const facN = Math.round((targetCount * distFactual) / 100);
+        const conN = Math.round((targetCount * distConceptual) / 100);
+        const advN = targetCount - facN - conN;
+        stylePrompt = `Question Style Distribution: Generate exactly ${facN} Factual/Direct questions, ${conN} Conceptual/Analytical questions, and ${advN} Advanced (Statement-based / Assertion-Reason / Match the Following) questions.`;
+    }
+
+    // 🔥 Dynamic Language Prompt Logic
+    let langInstruction = "bilingual (English & Hindi)";
+    if (paperLanguage === "Hindi Only") {
+        langInstruction = "strictly in HINDI language only. Important: For the JSON response, put the exact same Hindi text in BOTH the '_en' and '_hi' fields to ensure the schema remains valid.";
+    } else if (paperLanguage === "English Only") {
+        langInstruction = "strictly in ENGLISH language only. Important: For the JSON response, put the exact same English text in BOTH the '_en' and '_hi' fields to ensure the schema remains valid.";
+    }
+
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        questions: {
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              q_en: { type: "STRING" }, q_hi: { type: "STRING" },
+              options_en: { type: "ARRAY", items: { type: "STRING" } },
+              options_hi: { type: "ARRAY", items: { type: "STRING" } },
+              correct_index: { type: "INTEGER" },
+              difficulty: { type: "STRING" },
+              exp_en: { type: "STRING" }, exp_hi: { type: "STRING" },
+              source_page: { type: "STRING" }
+            },
+            required: ["q_en","q_hi","options_en","options_hi","correct_index","difficulty","exp_en","exp_hi","source_page"]
+          }
+        }
+      }
+    };
+
+    const prompt = `Generate EXACTLY ${targetCount} UNIQUE, high-quality ${langInstruction} MCQs from the provided text.
+Exam Standard: ${examType}
+${stylePrompt}
+${topicFocus.trim() ? `FOCUS AREA: "${topicFocus}"` : ""}
+Difficulty: ${easyN} Easy, ${modN} Moderate, ${hardN} Hard.
+Do NOT repeat: [${existing}].
+Provide exactly 4 options. Keep the options concise like a real exam.
+Give thorough explanations.
+    IMPORTANT: The source text contains page markers like [PAGE 1]. You MUST include the exact "source_page" number (e.g., "1") for each question based on where the fact was found. If no markers exist, set it to "N/A".
+    Source Text: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+    
+    const delays = [1000, 2000, 4000, 8000, 16000];
+    let success = false;
+    let parsedData = null;
+
+    for (let i = 0; i <= delays.length; i++) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            systemInstruction: { parts: [{ text: "You are an expert exam paper setter. Provide highly accurate answer keys. Keep options short." }] },
+            generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.7 }
+          })
+        });
+        if (!res.ok) throw new Error("API error " + res.status);
+        const data = await res.json();
+        parsedData = JSON.parse(data.candidates[0].content.parts[0].text);
+        success = true;
+        break;
+      } catch (err) {
+        if (i < delays.length) await new Promise(r => setTimeout(r, delays[i]));
+      }
+    }
+
+    if (success && parsedData?.questions?.length > 0) {
+      const newQs = parsedData.questions.map((q, i) => ({ ...q, id: Date.now() + i }));
+      setQuestions(prev => [...prev, ...newQs]);
+      setStudentAnswers({});
+      setIsTestSubmitted(false);
+      notify(`✅ ${newQs.length} naye questions jode gaye.`);
+    } else {
+      notify("❌ Generation fail. Thodi der baad try karein.");
+    }
+
+    setIsGenerating(false);
+  };
+
+  const deleteQuestion = (id) => {
+    setQuestions(prev => prev.filter(q => q.id !== id));
+    notify("Question hata diya.");
+  };
+
+  const suggestFocusTopics = async () => {
+    if (!inputText.trim() || isSuggestingTopics) return;
+    setIsSuggestingTopics(true);
+    notify("✨ AI is analyzing text for key topics...");
+
+    const safeText = inputText.substring(0, 15000);
+    const prompt = `Analyze this text and extract the 3 most important exam topics/themes. Return ONLY a comma-separated list of these 3 topics. Text: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3 }
+        })
+      });
+      const data = await res.json();
+      let topics = data.candidates[0].content.parts[0].text.trim();
+      topics = topics.replace(/^["']|["']$/g, '');
+      setTopicFocus(topics);
+      notify("✅ ✨ Topics suggested!");
+    } catch (err) {
+      notify("❌ AI Topic Suggestion failed.");
+    } finally {
+      setIsSuggestingTopics(false);
+    }
+  };
+
+  const generateAISummary = async () => {
+    if (!inputText.trim() || isSummarizing) return;
+    setIsSummarizing(true);
+    notify("✨ AI is generating quick study notes...");
+
+    const safeText = inputText.substring(0, 40000);
+    const prompt = `Create a concise, high-yield bilingual (English & Hindi) study summary from the following text. Use bullet points. Focus on key facts, dates, and concepts that are highly tested in exams. \n\nText: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.5 }
+        })
+      });
+      const data = await res.json();
+      setAiSummary(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Quick Notes generated!");
+    } catch (err) {
+      notify("❌ Failed to generate notes.");
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const generateAIMnemonics = async () => {
+    if (!inputText.trim() || isGeneratingMnemonics) return;
+    setIsGeneratingMnemonics(true);
+    notify("✨ AI is generating memory tricks (mnemonics)...");
+
+    const safeText = inputText.substring(0, 40000);
+    const prompt = `Create short, highly effective memory tricks, mnemonics, or acronyms to help a student easily memorize the key facts, dates, and concepts from this text. Use simple Hinglish (Hindi + English) for better retention. \n\nText: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7 }
+        })
+      });
+      const data = await res.json();
+      setAiMnemonics(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Memory Tricks generated!");
+    } catch (err) {
+      notify("❌ Failed to generate memory tricks.");
+    } finally {
+      setIsGeneratingMnemonics(false);
+    }
+  };
+
+  const generateAIFlashcards = async () => {
+    if (!inputText.trim() || isGeneratingFlashcards) return;
+    setIsGeneratingFlashcards(true);
+    notify("✨ AI is generating quick revision flashcards...");
+
+    const safeText = inputText.substring(0, 40000);
+    const prompt = `Create 10 quick, high-yield Q&A flashcards from the following text for rapid revision. Format them clearly with "Q:" and "A:". Use a mix of English and Hindi. \n\nText: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.6 }
+        })
+      });
+      const data = await res.json();
+      setAiFlashcards(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Flashcards generated!");
+    } catch (err) {
+      notify("❌ Failed to generate flashcards.");
+    } finally {
+      setIsGeneratingFlashcards(false);
+    }
+  };
+
+  const generateAIStudyPlan = async () => {
+    if (!inputText.trim() || isGeneratingPlan) return;
+    setIsGeneratingPlan(true);
+    notify("✨ AI is creating a 7-day study plan...");
+
+    const safeText = inputText.substring(0, 40000);
+    const prompt = `Based on the following syllabus/text, create a structured 7-day study plan. Break down the topics logically day by day. Keep it concise, motivational, and format it clearly using bullet points. Use bilingual (English & Hindi) instructions. \n\nText: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.5 }
+        })
+      });
+      const data = await res.json();
+      setAiStudyPlan(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Study Plan generated!");
+    } catch (err) {
+      notify("❌ Failed to generate study plan.");
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
+
+  const generateAIKeyFacts = async () => {
+    if (!inputText.trim() || isExtractingFacts) return;
+    setIsExtractingFacts(true);
+    notify("✨ AI is extracting dates & numbers...");
+
+    const safeText = inputText.substring(0, 40000);
+    const prompt = `Extract all important dates, years, articles, formulas, and critical numerical facts from the following text. Present them as a clean, highly readable bilingual list. \n\nText: ${safeText}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3 }
+        })
+      });
+      const data = await res.json();
+      setAiKeyFacts(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Key Facts extracted!");
+    } catch (err) {
+      notify("❌ Failed to extract facts.");
+    } finally {
+      setIsExtractingFacts(false);
+    }
+  };
+
+  const askAIAboutText = async () => {
+    if (!chatQuestion.trim() || !inputText.trim() || isAskingAI) return;
+    setIsAskingAI(true);
+    notify("✨ AI is finding the answer...");
+
+    const safeText = inputText.substring(0, 30000);
+    const prompt = `Based ONLY on the following text, answer the user's question. If the answer is not in the text, say so clearly. \n\nText: ${safeText}\n\nQuestion: ${chatQuestion}`;
+
+    const apiKey = "";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3 }
+        })
+      });
+      const data = await res.json();
+      setChatAnswer(data.candidates[0].content.parts[0].text);
+      notify("✅ ✨ Answer found!");
+    } catch (err) {
+      notify("❌ AI failed to answer.");
+    } finally {
+      setIsAskingAI(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // 🔥 Safe Cloud Deletion Logic (Modal)
+  // ─────────────────────────────────────────────
+  const confirmDeletePaper = async () => {
+    if (!paperToDelete) return;
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'papers', paperToDelete);
+      await deleteDoc(docRef);
+      setMySavedPapers(prev => prev.filter(p => p.code !== paperToDelete));
+      notify("✅ Paper hamesha ke liye delete ho gaya.");
+      
+      if (savedCode === paperToDelete) {
+          setSavedCode(null);
+          setPaperAuthorId(null);
+          setQuestions([]); 
+          setRevealedQs({});
+          setStudentAnswers({});
+          setIsTestSubmitted(false);
+          setActiveTab("setup");
+      }
+    } catch (error) {
+      console.error("Error deleting paper:", error);
+      notify("❌ Delete karne mein problem hui.");
+    } finally {
+      setPaperToDelete(null); 
+    }
+  };
+
+  const fetchLibraryData = async () => {
+    if (!user) return;
+    setIsLoadingLibrary(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'papers'));
+      const allPapers = querySnapshot.docs.map(d => d.data());
+      const myPapers = allPapers.filter(p => p.authorId === user.uid).sort((a,b) => b.createdAt - a.createdAt);
+      setMySavedPapers(myPapers);
+    } catch (e) {
+      console.error(e);
+      notify("❌ Library load karne mein error.");
+    } finally {
+      setIsLoadingLibrary(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "library") {
+      fetchLibraryData();
+    }
+  }, [user, activeTab]);
+
+  const loadPaperByCode = async (codeToLoad) => {
+    if (!user || !codeToLoad.trim()) return;
+    
+    let cleanCode = codeToLoad.trim().toUpperCase().replace(/\s/g, '');
+    if (cleanCode.startsWith("BDR")) {
+        cleanCode = cleanCode.replace(/^BDR-?/, "BDR-"); 
+    } else {
+        cleanCode = "BDR-" + cleanCode;
+    }
+
+    notify(`⏳ Code ${cleanCode} load ho raha hai...`);
+    
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'papers', cleanCode);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setInputTitle(data.title || "Loaded Paper");
+        setExamType(data.examType || "State PCS (RPSC)");
+        setPerspectiveMode(data.perspectiveMode || "Analytical");
+        setPaperLanguage(data.paperLanguage || "Bilingual");
+        setQuestions(data.questions || []);
+        setSavedCode(data.code);
+        setPaperAuthorId(data.authorId);
+        setExamSubject(data.examSubject || "G.K. and G.S.");
+        setMaxMarks(data.maxMarks || "200");
+        setPaperCode(data.paperCode || "50");
+        
+        setRevealedQs({});
+        setStudentAnswers({});
+        setIsTestSubmitted(false);
+        
+        setActiveTab("preview");
+        notify(`✅ Paper load ho gaya!`);
+      } else {
+        notify(`❌ Code ${cleanCode} se koi paper nahi mila. Sahi code dalein.`);
+      }
+    } catch (e) {
+      console.error(e);
+      notify("❌ Network error. Connection check karein.");
+    }
+  };
+
+  // ─────────────────────────────────────────────
+  // 🔥 Live Test Actions & Calculations
+  // ─────────────────────────────────────────────
+  const submitTest = () => {
+    setIsTestSubmitted(true);
+    if (pdfRef.current) {
+      pdfRef.current.parentElement.parentElement.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    notify("✅ Test Submitted Successfully!");
+  };
+
+  const retakeTest = () => {
+    setStudentAnswers({});
+    setIsTestSubmitted(false);
+    if (pdfRef.current) {
+      pdfRef.current.parentElement.parentElement.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const getScoreData = () => {
+    let c = 0, w = 0, u = 0;
+    questions.forEach(q => {
+        const ans = studentAnswers[q.id];
+        if (ans === undefined || ans === 4) u++;
+        else if (ans === q.correct_index) c++;
+        else w++;
+    });
+    
+    const tQ = questions.length || 1;
+    const mM = Number(maxMarks) || 200;
+    const mpq = mM / tQ;
+    const neg = mpq / 3;
+    const s = (c * mpq) - (w * neg);
+    
+    return { 
+      correct: c, 
+      wrong: w, 
+      unattempted: u, 
+      score: isNaN(s) ? "0.00" : s.toFixed(2), 
+      total: mM 
+    };
+  };
+
+  // Option Renderer function
+  const renderOption = (q, i, isHindi) => {
+    const isSelected = studentAnswers[q.id] === i;
+    const isCorrect = q.correct_index === i;
+    const isRevealed = (!isPracticeMode || revealedQs[q.id] || isTestSubmitted);
+
+    let bgClass = "transparent", textClass = "text-slate-800", borderClass = "border-transparent", showCheck = false;
+
+    if (isTestSubmitted) {
+        if (isCorrect) {
+            bgClass = "bg-emerald-100 font-bold shadow-sm"; borderClass = "border-emerald-500"; textClass = "text-emerald-900"; showCheck = isSelected; 
+        } else if (isSelected && !isCorrect) {
+            bgClass = "bg-rose-100"; borderClass = "border-rose-500"; textClass = "text-rose-900 line-through";
+        } else {
+            borderClass = "border-transparent opacity-60";
+        }
+    } else {
+        if (isSelected) {
+            bgClass = "bg-indigo-100 font-bold shadow-sm ring-1 ring-indigo-500"; borderClass = "border-indigo-500"; textClass = "text-indigo-900"; showCheck = true;
+        } else if (isRevealed && isCorrect) {
+            bgClass = "bg-emerald-50 font-bold"; textClass = "text-emerald-800";
+        } else {
+            bgClass = "hover:bg-slate-100 cursor-pointer"; borderClass = "border-slate-200";
+        }
+    }
+
+    const optionText = isHindi ? (q.options_hi && q.options_hi[i] ? q.options_hi[i] : "") : (q.options_en && q.options_en[i] ? q.options_en[i] : "");
+
+    return (
+        <div 
+          key={`${q.id}-${isHindi ? 'hi' : 'en'}-${i}`}
+          onClick={() => { if (!isTestSubmitted) setStudentAnswers(prev => ({...prev, [q.id]: i})) }}
+          className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-all ${bgClass} ${borderClass} ${textClass}`}
+        >
+          <span className="shrink-0 font-sans">({i + 1})</span>
+          <span className="flex-1">{optionText}</span>
+          {showCheck && !isTestSubmitted && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+          {showCheck && isTestSubmitted && isCorrect && <Check className="w-4 h-4 text-emerald-600 shrink-0" />}
+        </div>
+    );
+  };
+
+  const renderOption5 = (q, isHindi) => {
+    const isSelected = studentAnswers[q.id] === 4;
+    let bgClass = "transparent", borderClass = "border-transparent", textClass="text-slate-800", showCheck = false;
+
+    if (isTestSubmitted) {
+        if (isSelected) { bgClass = "bg-slate-200"; borderClass = "border-slate-400"; textClass = "text-slate-600"; } 
+        else { borderClass = "border-transparent opacity-60"; }
+    } else {
+        if (isSelected) { bgClass = "bg-indigo-100 font-bold shadow-sm ring-1 ring-indigo-500"; borderClass = "border-indigo-500"; textClass = "text-indigo-900"; showCheck = true; } 
+        else { bgClass = "hover:bg-slate-100 cursor-pointer"; borderClass = "border-slate-200"; }
+    }
+
+    return (
+        <div 
+          key={`${q.id}-opt5-${isHindi ? 'hi' : 'en'}`}
+          onClick={() => { if (!isTestSubmitted) setStudentAnswers(prev => ({...prev, [q.id]: 4})) }}
+          className={`mt-2 text-[12.5px] px-2 py-1 flex items-center gap-1.5 rounded border transition-all ${bgClass} ${borderClass} ${textClass}`}
+        >
+          <span className="shrink-0 font-sans">(5)</span>
+          <span className="flex-1">{isHindi ? "अनुत्तरित प्रश्न" : "Question not attempted"}</span>
+          {showCheck && !isTestSubmitted && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+        </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────
+  // 🔥 EXAM-PERFECT TWIN-COLUMN / SINGLE-COLUMN WORD (.DOC) EXPORT
+  // ─────────────────────────────────────────────
+  const exportAsWordDoc = () => {
+    if (!questions.length) return;
+    setIsExportBusy(true);
+    notify("⏳ Word Document ban raha hai... Kripya wait karein.");
+
+    try {
+      const globalFont = "font-family: 'Times New Roman', Times, serif;";
+      const devanagariFont = "font-family: 'Mangal', 'Noto Serif Devanagari', 'Arial Unicode MS', serif;";
+      
+      const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' 
+                        xmlns:w='urn:schemas-microsoft-com:office:word' 
+                        xmlns='http://www.w3.org/TR/REC-html40'>
+                      <head>
+                        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+                        <title>ExamMind AI MOCK TEST</title>
+                        <style>
+                          table { border-collapse: collapse; }
+                          p { margin: 0 0 10px 0; }
+                        </style>
+                      </head>
+                      <body style="${globalFont} font-size: 11pt; color: #000; margin: 0; padding: 20px;">`;
+      
+      const footer = "</body></html>";
+      
+      let html = `
+        <div style="border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; text-align: center;">
+          <h1 style="font-size: 16pt; font-weight: bold; text-transform: uppercase; margin: 0 0 5px 0;">${(inputTitle || "").replace(/_/g, " ")}</h1>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px;">
+            <tr>
+              <td width="33%" align="left" style="font-weight: bold; font-size: 11pt;">Paper Code: ${paperCode}</td>
+              <td width="33%" align="center" style="font-weight: bold; font-size: 11pt;">Sub: ${examSubject}</td>
+              <td width="33%" align="right" style="font-weight: bold; font-size: 11pt;">Maximum Marks: ${maxMarks}</td>
+            </tr>
+          </table>
+        </div>
+      `;
+      
+      questions.forEach((q, idx) => {
+        html += `<div style="margin-bottom: 25px; page-break-inside: avoid;">`;
+        
+        html += `<table width="100%" cellpadding="0" cellspacing="0"><tr>`;
+        
+        // Render Hindi Side if Bilingual or Hindi Only
+        if (paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") {
+           let colWidth = paperLanguage === "Bilingual" ? "48%" : "100%";
+           let borderStyle = paperLanguage === "Bilingual" ? "padding-right: 15px; border-right: 1px solid #000;" : "";
+           html += `
+             <td width="${colWidth}" valign="top" style="${borderStyle}">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="30" valign="top" style="font-weight: bold; font-size: 11pt; ${devanagariFont}">${idx + 1}.</td>
+                    <td valign="top" style="${devanagariFont} font-size: 11pt;">
+                       <p style="text-align: justify; margin-bottom: 12px; line-height: 1.4;">${q.q_hi}</p>
+                       <table width="100%" cellpadding="2" cellspacing="0" style="${devanagariFont} font-size: 10pt;">
+                          <tr>
+                            <td width="50%" valign="top">(1) ${q.options_hi && q.options_hi[0] ? q.options_hi[0] : ""}</td>
+                            <td width="50%" valign="top">(2) ${q.options_hi && q.options_hi[1] ? q.options_hi[1] : ""}</td>
+                          </tr>
+                          <tr>
+                            <td width="50%" valign="top">(3) ${q.options_hi && q.options_hi[2] ? q.options_hi[2] : ""}</td>
+                            <td width="50%" valign="top">(4) ${q.options_hi && q.options_hi[3] ? q.options_hi[3] : ""}</td>
+                          </tr>
+                          <tr>
+                            <td colspan="2" valign="top" style="padding-top: 5px;">(5) अनुत्तरित प्रश्न</td>
+                          </tr>
+                       </table>
+                    </td>
+                  </tr>
+                </table>
+             </td>`;
+        }
+
+        // Gap for Twin-Column
+        if (paperLanguage === "Bilingual") {
+           html += `<td width="2%"></td>`;
+        }
+
+        // Render English Side if Bilingual or English Only
+        if (paperLanguage === "Bilingual" || paperLanguage === "English Only") {
+           let colWidth = paperLanguage === "Bilingual" ? "48%" : "100%";
+           let padStyle = paperLanguage === "Bilingual" ? "padding-left: 10px;" : "";
+           html += `
+             <td width="${colWidth}" valign="top" style="${padStyle}">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td width="30" valign="top" style="font-weight: bold; font-size: 11pt; ${globalFont}">${idx + 1}.</td>
+                    <td valign="top" style="${globalFont} font-size: 11pt;">
+                       <p style="text-align: justify; margin-bottom: 12px; line-height: 1.4;">${q.q_en}</p>
+                       <table width="100%" cellpadding="2" cellspacing="0" style="${globalFont} font-size: 10pt;">
+                          <tr>
+                            <td width="50%" valign="top">(1) ${q.options_en && q.options_en[0] ? q.options_en[0] : ""}</td>
+                            <td width="50%" valign="top">(2) ${q.options_en && q.options_en[1] ? q.options_en[1] : ""}</td>
+                          </tr>
+                          <tr>
+                            <td width="50%" valign="top">(3) ${q.options_en && q.options_en[2] ? q.options_en[2] : ""}</td>
+                            <td width="50%" valign="top">(4) ${q.options_en && q.options_en[3] ? q.options_en[3] : ""}</td>
+                          </tr>
+                          <tr>
+                            <td colspan="2" valign="top" style="padding-top: 5px;">(5) Question not attempted</td>
+                          </tr>
+                       </table>
+                    </td>
+                  </tr>
+                </table>
+             </td>`;
+        }
+        
+        html += `</tr></table>`;
+
+        // Export Explanations based on Language
+        if (!isPracticeMode) {
+           html += `<div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; margin-top: 15px; margin-left: 25px; border-radius: 4px;">
+              <p style="margin-bottom: 5px; font-weight: bold;">Answer: (${q.correct_index + 1})</p>`;
+           
+           if (paperLanguage === "Bilingual" || paperLanguage === "English Only") {
+              html += `<p style="margin-bottom: 5px; font-size: 10pt;"><span style="font-weight:bold">${paperLanguage === "Bilingual" ? "EN: " : ""}</span>${q.exp_en}</p>`;
+           }
+           if (paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") {
+              html += `<p style="margin: 0; font-size: 10pt; ${devanagariFont}"><span style="font-weight:bold; ${globalFont}">${paperLanguage === "Bilingual" ? "HI: " : ""}</span>${q.exp_hi}</p>`;
+           }
+           html += `</div>`;
+        }
+        html += `</div>`;
+      });
+
+      if(isPracticeMode) {
+          html += `<br clear="all" style="page-break-before:always" />`;
+          html += `<div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                     <h2 style="font-size: 16pt; font-weight: bold; text-transform: uppercase;">Answer Key & Explanations</h2>
+                   </div>`;
+          
+          questions.forEach((q, idx) => {
+            html += `<div style="margin-bottom: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 15px; page-break-inside: avoid;">
+                <p style="font-weight: bold; margin-bottom: 5px;">Q${idx + 1}. Answer: (${q.correct_index + 1})</p>`;
+            
+            if (paperLanguage === "Bilingual" || paperLanguage === "English Only") {
+                html += `<p style="margin: 0 0 4px 0; font-size: 10pt;"><strong>${paperLanguage === "Bilingual" ? "EN: " : ""}</strong> ${q.exp_en}</p>`;
+            }
+            if (paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") {
+                html += `<p style="margin: 0; font-size: 10pt; ${devanagariFont}"><strong style="${globalFont}">${paperLanguage === "Bilingual" ? "HI: " : ""}</strong> ${q.exp_hi}</p>`;
+            }
+            html += `</div>`;
+          });
+      }
+
+      const sourceHTML = header + html + footer;
+      
+      const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      const fileDownload = document.createElement("a");
+      fileDownload.href = url;
+      fileDownload.download = `${(inputTitle||"Test")}_ExamMind_AI.doc`;
+      document.body.appendChild(fileDownload);
+      fileDownload.click();
+      document.body.removeChild(fileDownload);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+      notify("✅ Word (.doc) file download ho gayi!");
+      
+    } catch(err) {
+      console.error(err);
+      notify("❌ Export mein error aayi.");
+    } finally {
+      setIsExportBusy(false);
+    }
+  };
+
+  const handleSmartPrint = () => {
+    if (!questions.length) return;
+    notify("⏳ PDF Download ho rahi hai... Kripya wait karein.");
+    
+    const prevZoom = zoomLevel;
+    setZoomLevel(1); 
+    
+    setTimeout(() => {
+      if (window.html2pdf) {
+        const element = document.getElementById('printable-paper');
+        const opt = {
+          margin:       [10, 0, 10, 0], 
+          filename:     `${(inputTitle || "Mock_Test").replace(/_/g, "_")}.pdf`,
+          image:        { type: 'jpeg', quality: 1 },
+          html2canvas:  { scale: 2, useCORS: true, letterRendering: true, ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore') },
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak:    { mode: 'css', avoid: '.question-block' }
+        };
+
+        window.html2pdf().set(opt).from(element).save().then(() => {
+          notify("✅ PDF Save ho gayi!");
+          setZoomLevel(prevZoom);
+        }).catch(err => {
+          console.error(err);
+          window.print();
+          setZoomLevel(prevZoom);
+        });
+      } else {
+        window.print();
+        setZoomLevel(prevZoom);
+      }
+    }, 500);
+  };
+
+  // ─────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-slate-100 flex flex-col overflow-x-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+
+      {/* 🔥 CUSTOM DELETE MODAL OVERLAY */}
+      {paperToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm text-center relative">
+            <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white shadow-sm">
+              <Trash2 className="w-8 h-8 text-rose-600" />
+            </div>
+            <h3 className="text-xl font-black text-slate-800 mb-2">Paper Delete Karein?</h3>
+            <p className="text-sm text-slate-500 mb-6 font-medium leading-relaxed">
+              Kya aap sach mein is paper ko hamesha ke liye delete karna chahte hain? Yeh wapas nahi aayega.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setPaperToDelete(null)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
+                Nahi, Cancel
+              </button>
+              <button onClick={confirmDeletePaper} className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-rose-500/30">
+                Haan, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 15mm; }
+          body, html { height: auto !important; overflow: visible !important; background: white !important; -webkit-print-color-adjust: exact; }
+          header, nav, aside, button, .no-print, .screen-only { display: none !important; }
+          
+          main, #preview-container, #printable-paper { 
+            display: block !important;
+            visibility: visible !important; 
+            position: static !important; 
+            overflow: visible !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            height: auto !important;
+            transform: none !important;
+            box-shadow: none !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          
+          body * { visibility: hidden; }
+          #printable-paper, #printable-paper * { visibility: visible; }
+          
+          .question-block { page-break-inside: avoid; break-inside: avoid; margin-bottom: 24px; }
+        }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      {!isFullscreen && (
+        <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-md">
+          <div className="max-w-screen-xl mx-auto px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
+
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0 overflow-hidden">
+              
+              <svg viewBox="0 0 48 48" className="w-8 h-8 sm:w-10 sm:h-10 shrink-0 drop-shadow-md" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="bookGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#3B82F6" />
+                    <stop offset="100%" stopColor="#1E3A8A" />
+                  </linearGradient>
+                  <linearGradient id="pageGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FFFFFF" />
+                    <stop offset="100%" stopColor="#E2E8F0" />
+                  </linearGradient>
+                </defs>
+                <circle cx="24" cy="24" r="24" fill="url(#bookGrad)" />
+                <path d="M24 35C17 35 12 32.5 9 30V15C12 17.5 17 20 24 20C31 20 36 17.5 39 15V30C36 32.5 31 35 24 35Z" fill="#0F172A" opacity="0.3"/>
+                <path d="M24 34C18 34 13 32 10 30V15C13 17 18 19 24 19V34Z" fill="url(#pageGrad)"/>
+                <path d="M24 34C30 34 35 32 38 30V15C35 17 30 19 24 19V34Z" fill="#F8FAFC"/>
+                <path d="M24 19V34" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="24" cy="11" r="2.5" fill="#FBBF24" />
+                <circle cx="16" cy="15" r="1.5" fill="#93C5FD" />
+                <circle cx="32" cy="15" r="1.5" fill="#93C5FD" />
+              </svg>
+
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-white text-sm sm:text-lg tracking-tight truncate">
+                    ExamMind <span className="text-blue-400">AI</span>
+                  </span>
+                </div>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 font-semibold tracking-widest uppercase truncate">By BDR GROUP</span>
+              </div>
+            </div>
+
+            <nav className="hidden md:flex items-center gap-2 bg-slate-800 p-1 rounded-lg">
+              {[
+                ["setup","Workspace Setup"],
+                ["preview","Paper Preview"],
+                ["library", "Cloud Library"]
+              ].map(([id, label]) => (
+                <button key={id} onClick={() => setActiveTab(id)}
+                  className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1.5 ${activeTab === id ? "bg-indigo-500 text-white shadow-sm" : "text-slate-300 hover:text-white hover:bg-slate-700"}`}>
+                  {id === "library" && <Library className="w-3.5 h-3.5" />}
+                  {label}
+                  {id === "preview" && questions.length > 0 &&
+                    <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${activeTab === id ? "bg-white/20 text-white" : "bg-slate-600 text-slate-300"}`}>{questions.length}</span>}
+                </button>
+              ))}
+            </nav>
+
+            <div className="flex items-center gap-2 shrink-0 md:hidden">
+              <select value={activeTab} onChange={(e) => setActiveTab(e.target.value)}
+                className="bg-slate-800 text-white text-xs font-bold p-1.5 rounded border border-slate-700 outline-none max-w-[120px]">
+                <option value="setup">Setup</option>
+                <option value="preview">Preview</option>
+                <option value="library">Library</option>
+              </select>
+            </div>
+          </div>
+        </header>
+      )}
+
+      {statusMessage && (
+        <div className={`fixed bottom-4 right-4 flex items-center gap-2 bg-slate-900 border border-slate-700 text-white p-3 rounded-lg shadow-xl animate-bounce ${isFullscreen ? "z-[99999]" : "z-50"}`}>
+          <AlertCircle className="w-4 h-4 text-indigo-400 shrink-0" />
+          <p className="text-sm font-medium pr-2">{statusMessage}</p>
+        </div>
+      )}
+
+      {/* ── CONTENT AREA ── */}
+      <div className={`max-w-screen-xl mx-auto flex-1 w-full flex flex-col md:flex-row items-start ${isFullscreen ? "px-0 py-0 max-w-full" : "px-3 sm:px-4 py-4 sm:py-6 gap-4 sm:gap-6"}`}>
+
+        {/* ── SIDEBAR ── */}
+        {(activeTab === "setup" || activeTab === "preview") && !isFullscreen && (
+          <aside className="w-full md:w-80 shrink-0 space-y-4 sm:space-y-5">
+            
+            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <Settings2 className="w-4 h-4 text-indigo-500" /> Advance Settings
+              </h3>
+              <div className="space-y-3.5">
+                
+                {/* 🔥 NEW: Paper Language Option */}
+                <div className="bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100">
+                  <label className="block text-indigo-900 font-bold mb-1.5 text-xs">Paper Language / Medium</label>
+                  <select value={paperLanguage} onChange={e => setPaperLanguage(e.target.value)}
+                    className="w-full p-2.5 border border-indigo-200 rounded-lg text-indigo-900 font-bold bg-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs sm:text-sm transition-all shadow-sm">
+                    <option value="Bilingual">Bilingual (English + Hindi)</option>
+                    <option value="Hindi Only">Only Hindi (हिंदी)</option>
+                    <option value="English Only">Only English</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1 text-xs">Exam Pattern</label>
+                  <select value={examType} onChange={e => setExamType(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-slate-50 focus:outline-none focus:border-indigo-500 text-xs sm:text-sm">
+                    {EXAM_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1 text-xs">Question Style</label>
+                  <select value={perspectiveMode} onChange={e => setPerspectiveMode(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-slate-50 focus:outline-none focus:border-indigo-500 text-xs sm:text-sm">
+                    {PERSPECTIVES.map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2.5 shadow-inner">
+                  <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Paper Meta Data</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[9px] uppercase">Paper Code</label>
+                      <input type="text" value={paperCode} onChange={e => setPaperCode(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-white focus:outline-none focus:border-indigo-500 text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[9px] uppercase">Max Marks</label>
+                      <input type="text" value={maxMarks} onChange={e => setMaxMarks(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-white focus:outline-none focus:border-indigo-500 text-xs" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[9px] uppercase">Subject</label>
+                    <input type="text" value={examSubject} onChange={e => setExamSubject(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-white focus:outline-none focus:border-indigo-500 text-xs" placeholder="G.K. and G.S." />
+                  </div>
+                </div>
+
+                {perspectiveMode === "Custom Mix (Percentage)" && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3 shadow-inner">
+                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Mix Question Distribution</h4>
+                    <SliderRow label="Factual / Direct" value={distFactual} color="factual" onChange={v => adjustStyleSliders("factual", v)} />
+                    <SliderRow label="Conceptual / Deep" value={distConceptual} color="conceptual" onChange={v => adjustStyleSliders("conceptual", v)} />
+                    <SliderRow label="Advanced (Statement)" value={distAdvanced} color="advanced" onChange={v => adjustStyleSliders("advanced", v)} />
+                  </div>
+                )}
+                
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1 text-xs flex items-center justify-between">
+                    <span>Topic Focus (Optional)</span>
+                    {inputText.trim() ? (
+                      <button onClick={suggestFocusTopics} disabled={isSuggestingTopics} className="text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-[10px] bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 transition-colors">
+                        {isSuggestingTopics ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        ✨ Auto-Suggest
+                      </button>
+                    ) : (
+                      <Target className="w-3 h-3 text-slate-400" />
+                    )}
+                  </label>
+                  <input type="text" value={topicFocus} onChange={e => setTopicFocus(e.target.value)}
+                    placeholder="Jaise: Physics, History..."
+                    className="w-full p-2 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-slate-50 focus:outline-none focus:border-indigo-500 text-xs sm:text-sm placeholder:text-slate-400 placeholder:font-normal" />
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 font-bold mb-1 text-xs">Questions ki Sankhya</label>
+                  <select value={targetCount} onChange={e => setTargetCount(parseInt(e.target.value))}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-slate-800 font-semibold bg-slate-50 focus:outline-none focus:border-indigo-500 text-xs sm:text-sm">
+                    <option value={15}>15 Questions</option>
+                    <option value={20}>20 Questions</option>
+                    <option value={25}>25 Questions</option>
+                    <option value={30}>30 Questions</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-500" /> Difficulty Level
+              </h3>
+              <div className="space-y-4">
+                <SliderRow label="Aasan (Easy)"    value={distEasy}     color="easy"     onChange={v => adjustSliders("easy", v)} />
+                <SliderRow label="Medium"           value={distModerate} color="moderate" onChange={v => adjustSliders("moderate", v)} />
+                <SliderRow label="Mushkil (Hard)"  value={distHard}     color="hard"     onChange={v => adjustSliders("hard", v)} />
+              </div>
+            </div>
+
+            <button onClick={generate} disabled={!inputText.trim() || isGenerating}
+              className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-sm font-bold transition-all shadow-lg ${
+                inputText.trim() && !isGenerating
+                  ? "bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white shadow-indigo-500/30 hover:-translate-y-0.5"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"}`}>
+              {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5 text-indigo-200" />}
+              {isGenerating ? "AI Paper bana raha hai…" : `Generate ${targetCount} MCQs`}
+            </button>
+            
+          </aside>
+        )}
+
+        {/* ── MAIN TABS ── */}
+        <main className="flex-1 min-w-0 w-full flex flex-col h-full" id="preview-container">
+
+          {/* Setup Tab */}
+          {activeTab === "setup" && !isFullscreen && (
+            <div className="space-y-4 sm:space-y-5">
+              <div onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)} onDrop={handleDrop}
+                className={`relative bg-white border-2 border-dashed rounded-2xl p-6 sm:p-12 text-center transition-all ${
+                  dragOver ? "border-indigo-500 bg-indigo-50 scale-[1.01]" : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"}`}>
+                <input type="file" accept=".pdf,.txt" onChange={handleFileInput}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                <div className="bg-indigo-100 w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full flex items-center justify-center mb-3 sm:mb-4">
+                  <Upload className={`w-6 h-6 sm:w-8 sm:h-8 ${dragOver ? "text-indigo-600" : "text-indigo-500"}`} />
+                </div>
+                <p className="font-bold text-slate-800 text-base sm:text-lg mb-1 sm:mb-2">PDF ya Text Upload Karein</p>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium">Apna PDF/TXT syllabus ya notes yahan tap karke chunein</p>
+              </div>
+
+              {pdfProgress && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
+                  <div className="flex items-center justify-between text-xs sm:text-sm font-bold text-slate-700 mb-3">
+                    <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> PDF read ho rahi hai...</span>
+                    <span className="text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{Math.round((pdfProgress.current / pdfProgress.total) * 100)}%</span>
+                  </div>
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="bg-gradient-to-r from-indigo-500 to-indigo-400 h-full rounded-full transition-all"
+                      style={{ width:`${(pdfProgress.current / pdfProgress.total) * 100}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-[350px] sm:h-[400px]">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs sm:text-sm font-bold text-slate-700">Source Text</span>
+                    {inputText.trim() && (
+                      <div className="flex flex-wrap gap-2 ml-1 sm:ml-2">
+                        <button onClick={generateAISummary} disabled={isSummarizing} className="text-[9px] sm:text-[10px] flex items-center gap-1 font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded border border-indigo-100 transition-colors">
+                          {isSummarizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          ✨ Quick Notes
+                        </button>
+                        <button onClick={generateAIMnemonics} disabled={isGeneratingMnemonics} className="text-[9px] sm:text-[10px] flex items-center gap-1 font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded border border-emerald-100 transition-colors">
+                          {isGeneratingMnemonics ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          ✨ Mnemonics
+                        </button>
+                        <button onClick={generateAIFlashcards} disabled={isGeneratingFlashcards} className="text-[9px] sm:text-[10px] flex items-center gap-1 font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded border border-amber-100 transition-colors">
+                          {isGeneratingFlashcards ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          ✨ Flashcards
+                        </button>
+                        <button onClick={generateAIStudyPlan} disabled={isGeneratingPlan} className="text-[9px] sm:text-[10px] flex items-center gap-1 font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded border border-blue-100 transition-colors">
+                          {isGeneratingPlan ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          ✨ Study Plan
+                        </button>
+                        <button onClick={generateAIKeyFacts} disabled={isExtractingFacts} className="text-[9px] sm:text-[10px] flex items-center gap-1 font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-2 py-1 rounded border border-rose-100 transition-colors">
+                          {isExtractingFacts ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          ✨ Key Facts
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <textarea ref={sourceTextRef} value={inputText} onChange={e => setInputText(e.target.value)}
+                  placeholder="PDF se nikala gaya text yahan dikhega. Aap text paste bhi kar sakte hain..."
+                  className="w-full flex-1 p-4 text-xs sm:text-sm text-slate-700 resize-none focus:outline-none focus:bg-indigo-50/30 placeholder-slate-400 leading-relaxed font-medium" />
+              </div>
+
+              {/* AI Outputs Section */}
+              {(aiSummary || aiMnemonics || aiFlashcards || aiStudyPlan || aiKeyFacts) && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mt-4">
+                  <div className="px-4 py-3 border-b border-slate-100 bg-indigo-50/50 flex items-center gap-2">
+                     <BrainCircuit className="w-4 h-4 text-indigo-600" />
+                     <span className="text-xs sm:text-sm font-bold text-indigo-900">✨ AI Study Materials</span>
+                  </div>
+                  <div className="p-4 space-y-6 max-h-[400px] overflow-y-auto text-sm text-slate-700">
+                     {aiSummary && (
+                       <div>
+                         <h4 className="font-bold text-indigo-700 mb-2 border-b pb-1 flex items-center gap-2"><Sparkles className="w-3 h-3"/> Quick Notes</h4>
+                         <div className="whitespace-pre-wrap leading-relaxed">{aiSummary}</div>
+                       </div>
+                     )}
+                     {aiKeyFacts && (
+                       <div>
+                         <h4 className="font-bold text-rose-700 mb-2 border-b pb-1 flex items-center gap-2"><Sparkles className="w-3 h-3"/> Key Facts, Dates & Numbers</h4>
+                         <div className="whitespace-pre-wrap leading-relaxed">{aiKeyFacts}</div>
+                       </div>
+                     )}
+                     {aiMnemonics && (
+                       <div>
+                         <h4 className="font-bold text-emerald-700 mb-2 border-b pb-1 flex items-center gap-2"><Sparkles className="w-3 h-3"/> Memory Tricks (Mnemonics)</h4>
+                         <div className="whitespace-pre-wrap leading-relaxed">{aiMnemonics}</div>
+                       </div>
+                     )}
+                     {aiFlashcards && (
+                       <div>
+                         <h4 className="font-bold text-amber-700 mb-2 border-b pb-1 flex items-center gap-2"><Sparkles className="w-3 h-3"/> Q&A Flashcards</h4>
+                         <div className="whitespace-pre-wrap leading-relaxed">{aiFlashcards}</div>
+                       </div>
+                     )}
+                     {aiStudyPlan && (
+                       <div>
+                         <h4 className="font-bold text-blue-700 mb-2 border-b pb-1 flex items-center gap-2"><Sparkles className="w-3 h-3"/> 7-Day Study Plan</h4>
+                         <div className="whitespace-pre-wrap leading-relaxed">{aiStudyPlan}</div>
+                       </div>
+                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Ask AI Section */}
+              {inputText.trim() && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mt-4">
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2 mb-3">
+                    <MessageSquare className="w-4 h-4 text-indigo-500" /> ✨ Ask AI about this text
+                  </h4>
+                  <div className="flex gap-2">
+                    <input type="text" value={chatQuestion} onChange={e => setChatQuestion(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && askAIAboutText()}
+                      placeholder="E.g., What are the main causes mentioned in the text?"
+                      className="flex-1 p-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500 bg-slate-50" />
+                    <button onClick={askAIAboutText} disabled={isAskingAI || !chatQuestion.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2">
+                      {isAskingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : "Ask"}
+                    </button>
+                  </div>
+                  {chatAnswer && (
+                    <div className="mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-100 text-sm text-slate-800 whitespace-pre-wrap shadow-inner relative">
+                      <button onClick={() => setChatAnswer("")} className="absolute top-2 right-2 text-indigo-400 hover:text-indigo-600"><X className="w-4 h-4"/></button>
+                      <span className="font-bold text-indigo-700 flex items-center gap-1 mb-2"><Sparkles className="w-3 h-3"/> AI Answer:</span>
+                      <span className="leading-relaxed">{chatAnswer}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* Library Tab */}
+          {activeTab === "library" && !isFullscreen && (
+            <div className="space-y-4 sm:space-y-6 w-full max-w-4xl mx-auto px-1">
+              <div className="bg-white p-5 sm:p-8 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <div className="bg-indigo-100 w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full flex items-center justify-center mb-3 sm:mb-4">
+                  <Search className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600" />
+                </div>
+                <h2 className="text-lg sm:text-xl font-black text-slate-800 mb-2">Test Paper Load Karein</h2>
+                <div className="flex flex-col sm:flex-row items-center max-w-sm mx-auto gap-2 w-full">
+                  <input type="text" placeholder="Jaise: XYZ12" 
+                    value={searchCode} onChange={(e) => setSearchCode(e.target.value.toUpperCase())}
+                    className="w-full p-3 border border-slate-300 rounded-xl text-center font-bold font-mono text-base sm:text-lg uppercase focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200" />
+                  <button onClick={() => loadPaperByCode(searchCode)} disabled={!searchCode.trim()}
+                    className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:bg-slate-300">
+                    Open
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-3 sm:mb-4 px-1">
+                   <h3 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
+                     <Library className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Meri Cloud Library
+                   </h3>
+                   <button onClick={fetchLibraryData} className="text-[10px] sm:text-xs font-bold text-indigo-600 bg-indigo-50 px-2 sm:px-3 py-1.5 rounded-lg hover:bg-indigo-100 flex items-center gap-1 transition-colors">
+                      <RotateCcw className="w-3.5 h-3.5" /> Refresh
+                   </button>
+                </div>
+                
+                {isLoadingLibrary ? (
+                  <div className="text-center py-12">
+                     <Loader2 className="w-8 h-8 animate-spin text-slate-400 mx-auto mb-4" />
+                     <p className="text-sm font-bold text-slate-500">Loading library...</p>
+                  </div>
+                ) : mySavedPapers.length === 0 ? (
+                  <div className="bg-slate-50 p-8 rounded-2xl border border-dashed border-slate-300 text-center text-slate-500 text-sm">
+                    Aapne abhi tak koi paper save nahi kiya hai.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    {mySavedPapers.map(paper => (
+                      <div key={paper.code} className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 bg-indigo-500 text-white text-[9px] sm:text-[10px] font-bold px-2 sm:px-3 py-1 sm:py-1.5 rounded-br-lg shadow-sm">
+                          CODE: {paper.code}
+                        </div>
+                        
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setPaperToDelete(paper.code); }} 
+                            className="absolute top-2 right-2 p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-100 hover:text-rose-700 rounded-full transition-all z-10 shadow-sm"
+                            title="Delete Paper"
+                        >
+                            <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                        
+                        <div className="mt-5 sm:mt-6">
+                            <h4 className="font-bold text-slate-800 text-sm sm:text-base mb-1 pr-6 truncate" title={(paper.title || "").replace(/_/g, " ")}>
+                              {(paper.title || "").replace(/_/g, " ")}
+                            </h4>
+                            <p className="text-[10px] sm:text-xs text-slate-500 mb-3 sm:mb-4">{new Date(paper.createdAt).toLocaleDateString()} • {(paper.questions || []).length} Qs • {paper.examType}</p>
+                            <button onClick={() => loadPaperByCode(paper.code)} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1">
+                              <Eye className="w-4 h-4" /> View & Download
+                            </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 🚀 Paper Preview Tab (Responsive A4 Viewer) */}
+          {activeTab === "preview" && (
+            <div className={
+              isFullscreen 
+                ? "fixed inset-0 z-[9999] bg-[#cbd5e1] flex flex-col w-full h-full" 
+                : "bg-[#e5e7eb] rounded-xl sm:rounded-2xl overflow-hidden border border-slate-300 shadow-inner flex flex-col w-full"
+              } 
+              style={isFullscreen ? {} : { height: "calc(100vh - 120px)", minHeight: "400px" }}>
+
+              {/* Toolbar - Responsive Flex Wrap */}
+              <div className={
+                isFullscreen 
+                  ? "bg-slate-800 border-b border-slate-700 p-2 sm:px-4 sm:py-3 flex flex-wrap items-center justify-between gap-2 shadow-lg z-10 text-white no-print" 
+                  : "bg-white border-b border-slate-200 p-2 sm:px-5 sm:py-3 flex flex-wrap items-center justify-between gap-2 shadow-sm z-10 no-print"
+              }>
+                {/* Group 1: Zoom & Timer */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={`flex items-center gap-0.5 sm:gap-1 p-0.5 sm:p-1 rounded-lg border ${isFullscreen ? 'bg-slate-700 border-slate-600' : 'bg-slate-100 border-slate-200'}`}>
+                    <button onClick={() => setZoomLevel(z => Math.max(z - 0.1, 0.3))} className={`p-1 sm:p-1.5 rounded transition-all ${isFullscreen ? 'hover:bg-slate-600 text-slate-300' : 'hover:bg-white text-slate-600'}`}><ZoomOut size={14} /></button>
+                    <button onClick={() => setZoomLevel(window.innerWidth < 640 ? 0.45 : 1)} className={`p-1 sm:p-1.5 rounded transition-all ${isFullscreen ? 'hover:bg-slate-600 text-slate-300' : 'hover:bg-white text-slate-600'}`}><RotateCcw size={14} /></button>
+                    <button onClick={() => setZoomLevel(z => Math.min(z + 0.1, 2))} className={`p-1 sm:p-1.5 rounded transition-all ${isFullscreen ? 'hover:bg-slate-600 text-slate-300' : 'hover:bg-white text-slate-600'}`}><ZoomIn size={14} /></button>
+                    <span className={`text-[10px] sm:text-xs font-bold tabular-nums mx-1 sm:mx-2 ${isFullscreen ? 'text-slate-300' : 'text-slate-500'}`}>{Math.round(zoomLevel * 100)}%</span>
+                  </div>
+                  <PaperTimer isFullscreen={isFullscreen} />
+                </div>
+
+                {/* Group 2: Actions & Save Button */}
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  
+                  {/* Manual Save Button inside Toolbar */}
+                  <div className="flex items-center gap-1 sm:gap-2 mr-0 sm:mr-2">
+                      {savedCode && (
+                         <div className="hidden sm:flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1.5 rounded-lg border border-emerald-200 text-[10px] font-bold shadow-sm">
+                             <span className="font-mono text-xs">{savedCode}</span>
+                             <button onClick={handleShare} className="hover:text-emerald-900 transition-colors ml-1"><Copy className="w-3 h-3" /></button>
+                         </div>
+                      )}
+                      <button 
+                          onClick={handleManualSave} 
+                          disabled={!questions.length || isSaving}
+                          className={`flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all shadow-md ${
+                            !questions.length ? "bg-slate-200 text-slate-400 cursor-not-allowed" :
+                            savedCode ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-indigo-600 hover:bg-indigo-500 text-white"
+                          }`}
+                      >
+                          {isSaving ? <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" /> : (savedCode ? <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4" /> : <CloudUpload className="w-3 h-3 sm:w-4 sm:h-4" />)}
+                          <span>{savedCode ? "Update Cloud" : "Save Cloud"}</span>
+                      </button>
+                  </div>
+
+                  <div className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg border ${isFullscreen ? 'bg-indigo-900/50 border-indigo-700/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                    <span className={`text-[10px] sm:text-xs font-bold ${isFullscreen ? 'text-indigo-200' : 'text-indigo-800'}`}>Practice</span>
+                    <button onClick={() => setIsPracticeMode(p => !p)}
+                      className={`relative w-7 sm:w-9 h-4 sm:h-5 rounded-full transition-colors flex items-center ${isPracticeMode ? "bg-indigo-600" : (isFullscreen ? "bg-slate-600" : "bg-slate-300")}`}>
+                      <div className={`absolute w-3 sm:w-3.5 h-3 sm:h-3.5 bg-white rounded-full shadow-sm transition-transform ${isPracticeMode ? "translate-x-3.5 sm:translate-x-5" : "translate-x-0.5 sm:translate-x-1"}`} />
+                    </button>
+                  </div>
+                  
+                  {/* Dropdown for Download */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                      disabled={!questions.length}
+                      className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all ${
+                        questions.length ? "bg-slate-800 hover:bg-slate-700 text-white shadow-md" : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      }`}
+                    >
+                      <Download className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Download</span>
+                      <ChevronDown className="w-3 h-3 opacity-70" />
+                    </button>
+
+                    {showDownloadMenu && questions.length > 0 && (
+                      <>
+                        <div className="fixed inset-0 z-[99998]" onClick={() => setShowDownloadMenu(false)}></div>
+                        <div className="absolute right-0 mt-2 w-56 sm:w-[320px] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden z-[99999] animate-fade-in origin-top-right">
+                          <button onClick={() => { handleSmartPrint(); setShowDownloadMenu(false); }} className="w-full text-left px-3 sm:px-4 py-3 hover:bg-slate-50 border-b border-slate-100 flex items-start gap-3">
+                            <div className="bg-rose-100 text-rose-600 p-2 rounded-lg shrink-0"><Printer className="w-4 h-4" /></div>
+                            <div>
+                              <div className="text-xs sm:text-sm font-bold text-slate-800">Save as PDF</div>
+                              <div className="hidden sm:block text-[11px] text-slate-500 font-medium leading-tight mt-1">Direct print ya small file ke liye.</div>
+                            </div>
+                          </button>
+                          <button onClick={() => { exportAsWordDoc(); setShowDownloadMenu(false); }} disabled={isExportBusy} className="w-full text-left px-3 sm:px-4 py-3 hover:bg-slate-50 flex items-start gap-3 disabled:opacity-50">
+                            <div className="bg-blue-100 text-blue-600 p-2 rounded-lg shrink-0">{isExportBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}</div>
+                            <div>
+                              <div className="text-xs sm:text-sm font-bold text-slate-800">Word (.doc)</div>
+                              <div className="hidden sm:block text-[11px] text-slate-500 font-medium leading-tight mt-1">Baad me edit karne ke liye chunein.</div>
+                            </div>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <button onClick={() => setIsFullscreen(!isFullscreen)} disabled={!questions.length}
+                    className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-all ${
+                      !questions.length ? "opacity-50 cursor-not-allowed" : 
+                      isFullscreen 
+                        ? "bg-slate-600 hover:bg-slate-500 text-white shadow-md" 
+                        : "bg-indigo-100 hover:bg-indigo-200 text-indigo-700 border border-indigo-200"
+                    }`}>
+                    {isFullscreen ? <X className="w-3 h-3 sm:w-4 sm:h-4" /> : <Maximize className="w-3 h-3 sm:w-4 sm:h-4" />}
+                    <span className="hidden sm:inline">{isFullscreen ? "Close" : "Full Screen"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* A4 Scroll Area - Horizontal scroll enabled for mobile width safety */}
+              <div className={`flex-1 overflow-x-auto overflow-y-auto p-2 sm:p-4 flex justify-center ${isFullscreen ? "items-start pt-4 sm:pt-12" : ""}`}
+                style={{ scrollbarWidth: "thin", scrollbarColor: isFullscreen ? "#475569 transparent" : "#cbd5e1 transparent" }}>
+
+                {/* Zoom wrapper */}
+                <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: "top center", transition: "transform .2s", marginBottom: isFullscreen ? "100px" : "0" }}>
+
+                  {/* EXACT A4 CANVAS -> Must remain 794px width for correct layout printing */}
+                  <div ref={pdfRef} id="printable-paper"
+                    className="bg-white shadow-xl sm:shadow-2xl text-left relative text-[#0f172a] font-serif"
+                    style={{ 
+                      width: "794px", 
+                      minWidth: "794px", 
+                      maxWidth: "794px", 
+                      minHeight: "1123px", 
+                      padding: "40px 30px", 
+                      boxSizing: "border-box",
+                      textRendering: "geometricPrecision"
+                    }}>
+
+                    <div className="border-b-2 border-slate-800 pb-3 mb-6 relative">
+                      <div className="absolute right-0 top-0 text-right font-sans" data-html2canvas-ignore="true">
+                        <p className="text-[7px] font-black tracking-widest text-slate-500 uppercase">Powered by</p>
+                        <p className="text-[10px] font-black tracking-widest text-indigo-900">BDR GROUP</p>
+                      </div>
+                      <h1 className="text-xl font-bold text-center uppercase tracking-wider pr-20 pl-20 font-sans">
+                        {(inputTitle || "").replace(/_/g, " ")}
+                      </h1>
+                      
+                      <div className="flex justify-between items-center mt-3 text-xs font-bold uppercase text-slate-800 tracking-wide font-sans border border-slate-200 bg-slate-50 p-2 rounded">
+                         <span>Paper Code: {paperCode}</span>
+                         <span>Sub: {examSubject}</span>
+                         <span>Maximum Marks: {maxMarks}</span>
+                      </div>
+                    </div>
+
+                    {/* 🔥 LIVE SCORECARD (Responsive on Desktop scale) */}
+                    {isTestSubmitted && (
+                      <div className="mb-8 border-2 border-indigo-500 bg-indigo-50 rounded-xl p-6 text-center shadow-sm screen-only" data-html2canvas-ignore="true">
+                        <h2 className="text-2xl font-black text-indigo-900 mb-6 font-sans">Your Test Scorecard 🏆</h2>
+                        <div className="flex flex-wrap justify-center gap-4 sm:gap-6 font-sans">
+                          <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 w-24 sm:w-28 shadow-sm">
+                            <div className="text-2xl sm:text-3xl font-black text-emerald-600">{getScoreData().correct}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase mt-1">Right ✅</div>
+                          </div>
+                          <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 w-24 sm:w-28 shadow-sm">
+                            <div className="text-2xl sm:text-3xl font-black text-rose-600">{getScoreData().wrong}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase mt-1">Wrong ❌</div>
+                          </div>
+                          <div className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 w-24 sm:w-28 shadow-sm">
+                            <div className="text-2xl sm:text-3xl font-black text-slate-600">{getScoreData().unattempted}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase mt-1">Left ⚠️</div>
+                          </div>
+                          <div className="bg-white border border-indigo-200 rounded-lg p-3 sm:p-4 w-28 sm:w-32 shadow-sm ring-2 ring-indigo-500">
+                            <div className="text-2xl sm:text-3xl font-black text-indigo-700">{getScoreData().score}</div>
+                            <div className="text-[10px] sm:text-xs font-bold text-indigo-500 uppercase mt-1">Marks</div>
+                          </div>
+                        </div>
+                        <div className="mt-6">
+                           <button onClick={retakeTest} className="px-6 py-2 bg-indigo-600 text-white rounded-full font-bold font-sans hover:bg-indigo-700 transition-all shadow-md">
+                              🔄 Retake Test
+                           </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Questions Layout (Dynamic: Twin-Column or Single-Column) */}
+                    {questions.length > 0 && (
+                      <div style={{ position: "relative", zIndex: 1 }}>
+                        {questions.map((q, idx) => (
+                          <div key={q.id} className="group relative question-block"
+                            style={{ borderBottom: "1px solid #cbd5e1", paddingBottom: "16px", marginBottom: "20px" }}>
+
+                            <div className="screen-only absolute -top-2 right-0 opacity-0 group-hover:opacity-100 transition-opacity z-20 bg-white pl-2 pb-2" data-html2canvas-ignore="true">
+                              <button onClick={() => deleteQuestion(q.id)} className="p-1.5 text-slate-400 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 rounded-md transition-colors shadow-sm">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            <div className="flex w-full">
+                               
+                               {/* Hindi Column (Visible if Bilingual OR Hindi Only) */}
+                               {(paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") && (
+                                 <div className={`${paperLanguage === "Bilingual" ? "w-1/2 pr-4 border-r border-slate-400" : "w-full"} flex`}>
+                                     <div className="w-8 shrink-0 font-bold text-[13px] pt-0.5 font-sans">{idx + 1}.</div>
+                                     
+                                     <div className={`flex-1 ${paperLanguage === "English Only" ? "font-['Times_New_Roman',serif]" : "font-['Noto_Serif_Devanagari',serif]"}`}>
+                                         <div className="text-[13px] font-medium leading-[1.5] mb-3 text-justify">{q.q_hi}</div>
+                                         
+                                         <div className="grid grid-cols-2 gap-x-2 gap-y-2 text-[12.5px]">
+                                             {[0, 1, 2, 3].map(i => renderOption(q, i, true))}
+                                         </div>
+                                         
+                                         {renderOption5(q, true)}
+                                         
+                                         <div className="mt-3 flex gap-2 flex-wrap items-center screen-only font-sans" data-html2canvas-ignore="true">
+                                            {!isPracticeMode && <Badge level={q.difficulty} />}
+                                            {q.source_page && q.source_page !== "N/A" && q.source_page !== "unknown" && (
+                                              <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200">Page {q.source_page}</span>
+                                            )}
+                                         </div>
+                                     </div>
+                                 </div>
+                               )}
+
+                               {/* English Column (Visible if Bilingual OR English Only) */}
+                               {(paperLanguage === "Bilingual" || paperLanguage === "English Only") && (
+                                 <div className={`${paperLanguage === "Bilingual" ? "w-1/2 pl-4" : "w-full"} flex`}>
+                                     <div className="w-8 shrink-0 font-bold text-[13px] pt-0.5 font-sans">{idx + 1}.</div>
+                                     
+                                     <div className="flex-1 font-['Times_New_Roman',serif]">
+                                         <div className="text-[13px] font-medium leading-[1.5] mb-3 text-justify">{q.q_en}</div>
+                                         
+                                         <div className="grid grid-cols-2 gap-x-2 gap-y-2 text-[12.5px]">
+                                             {[0, 1, 2, 3].map(i => renderOption(q, i, false))}
+                                         </div>
+
+                                         {renderOption5(q, false)}
+
+                                         {/* If Single Column English, show badges here */}
+                                         {paperLanguage === "English Only" && (
+                                           <div className="mt-3 flex gap-2 flex-wrap items-center screen-only font-sans" data-html2canvas-ignore="true">
+                                              {!isPracticeMode && <Badge level={q.difficulty} />}
+                                              {q.source_page && q.source_page !== "N/A" && q.source_page !== "unknown" && (
+                                                <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200">Page {q.source_page}</span>
+                                              )}
+                                           </div>
+                                         )}
+                                     </div>
+                                 </div>
+                               )}
+
+                            </div>
+
+                            {isPracticeMode && !isTestSubmitted && (
+                              <div className="screen-only mt-3 text-center font-sans" data-html2canvas-ignore="true">
+                                <button onClick={() => setRevealedQs(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition-colors">
+                                  {revealedQs[q.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                  {revealedQs[q.id] ? "Hide Answer" : "Show Answer"}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Dynamic Answer Explanations based on Paper Language */}
+                            {(!isPracticeMode || revealedQs[q.id] || isTestSubmitted) && (
+                              <div className="mt-4 ml-8 bg-slate-50 border border-slate-200 rounded p-3 text-[11.5px] font-sans">
+                                <div className="font-bold text-slate-800 mb-1">
+                                  Answer: <span className="text-emerald-700">({q.correct_index + 1})</span>
+                                </div>
+                                
+                                {(paperLanguage === "Bilingual" || paperLanguage === "English Only") && (
+                                  <div className="text-slate-600 mb-1">
+                                    {paperLanguage === "Bilingual" && <span className="font-bold text-slate-800">EN: </span>}
+                                    {q.exp_en}
+                                  </div>
+                                )}
+                                
+                                {(paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") && (
+                                  <div className="text-slate-600 font-['Noto_Serif_Devanagari',serif]">
+                                    {paperLanguage === "Bilingual" && <span className="font-bold text-slate-800 font-sans">HI: </span>}
+                                    {q.exp_hi}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {!isTestSubmitted && (
+                          <div className="mt-10 mb-6 flex justify-center screen-only font-sans" data-html2canvas-ignore="true">
+                            <button onClick={submitTest} 
+                              className="flex items-center gap-2 px-6 sm:px-8 py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-700 hover:to-indigo-600 text-white rounded-full font-black text-sm sm:text-lg shadow-lg hover:-translate-y-1 transition-all">
+                              <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> Submit Test & Check Score
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Export Answer Keys based on Paper Language */}
+                        {isPracticeMode && (
+                          <div className="question-block font-sans" style={{ marginTop: "40px", borderTop: "2px solid #000", paddingTop: "20px" }}>
+                            <h2 className="text-center text-lg font-bold uppercase tracking-wider mb-6">Answer Key & Explanations</h2>
+                            
+                            <div className="space-y-4">
+                              {questions.map((q, idx) => (
+                                <div key={"exp"+q.id} className="text-[11.5px] border-b border-slate-200 pb-3">
+                                  <div className="font-bold mb-1">
+                                    Q{idx+1}. Answer: <span className="text-emerald-700">({q.correct_index + 1})</span>
+                                  </div>
+
+                                  {(paperLanguage === "Bilingual" || paperLanguage === "English Only") && (
+                                    <div className="text-slate-600 mb-1">
+                                      {paperLanguage === "Bilingual" && <span className="font-bold text-slate-800">EN: </span>}
+                                      {q.exp_en}
+                                    </div>
+                                  )}
+                                  
+                                  {(paperLanguage === "Bilingual" || paperLanguage === "Hindi Only") && (
+                                    <div className="text-slate-600 font-['Noto_Serif_Devanagari',serif]">
+                                      {paperLanguage === "Bilingual" && <span className="font-bold text-slate-800 font-sans">HI: </span>}
+                                      {q.exp_hi}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
+    </div>
+  );
+}
+
+```
